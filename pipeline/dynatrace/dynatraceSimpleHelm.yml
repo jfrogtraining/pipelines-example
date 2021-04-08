@@ -1,9 +1,9 @@
 resources:
-  - name: helmDemoGitHub
+  - name: DemoGitHub
     type: GitRepo
     configuration:
       gitProvider: danielMiakotkinGitHub
-      path: danielmkn/jfrog-pipeline-extensions # if path is modified, change the name as well, per Pipelines doc
+      path: danielmkn/pipelines-example # if path is modified, change the name as well, per Pipelines doc
       branches:
         include: pipelines
       buildOn:
