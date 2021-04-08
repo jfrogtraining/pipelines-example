@@ -85,7 +85,7 @@ pipelines:
           integrations:
             - name: partnership_jfrog_io
           inputResources:
-            - name: helmDemoGitHub
+            - name: DemoGitHub
           dockerFileLocation: pipeline/dynatrace/
           dockerFileName: Dockerfile
           #dockerImageName: partnership-art-docker-dynatrace.jfrog.io/simplehelm
