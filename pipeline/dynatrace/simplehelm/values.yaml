@@ -1,0 +1,6 @@
+replicaCount: 1
+image:
+  repository: ${res_simpleDockerImage_imageName}
+  tag: ${res_simpleDockerImage_imageTag}
+  pullPolicy: IfNotPresent
+  port: 80

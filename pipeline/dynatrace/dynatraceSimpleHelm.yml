@@ -1,0 +1,220 @@
+resources:
+  - name: helmDemoGitHub
+    type: GitRepo
+    configuration:
+      gitProvider: danielMiakotkinGitHub
+      path: danielmkn/jfrog-pipeline-extensions # if path is modified, change the name as well, per Pipelines doc
+      branches:
+        include: pipelines
+      buildOn:
+        commit: false
+
+  - name: simpleDockerImage
+    type: Image
+    configuration:
+      registry: simplehelmDockerIntegration
+      sourceRepository: art-docker-dynatrace
+      #imageName: partnership-art-docker-dynatrace.jfrog.io/simplehelm
+      imageName: dynatracejtpp.jfrog.io/art-docker-dynatrace/simplehelm
+      imageTag: '${run_number}'
+
+  - name: simpleBuildInfo
+    type: BuildInfo
+    configuration:
+      sourceArtifactory: partnership_jfrog_io
+      buildName: SampleApp
+      buildNumber: 1
+
+  - name: simpleHelmChartBuildInfo
+    type: BuildInfo
+    configuration:
+      sourceArtifactory: partnership_jfrog_io
+      buildName: SampleApp
+      buildNumber: '0.1.${run_number}'
+
+  - name: simplehelmRepo_chart
+    type: GitRepo
+    configuration:
+      gitProvider: danielMiakotkinGitHub
+      path: danielmkn/jfrog-pipeline-extensions
+      branches:
+        include: pipelines
+
+  - name: simplehelmChart
+    type: HelmChart
+    configuration:
+      sourceArtifactory: partnership_jfrog_io
+      repository: simplecharts
+      chart: simplehelm
+      version: '0.1.${run_number}'
+
+  # Extensions
+
+  - name: JFrogExtensionSources
+    type: GitRepo
+    configuration:
+      path: jfrog/partnership-team-pipelines
+      gitProvider: danielMiakotkinGitHub     # <-- account should have and admin access to the repo
+      branches:
+        include: resources
+      buildOn:
+        commit: false # won't build on commit to the resources repository
+
+  - name: gkeClusterResource
+    type: gcp/gkeClusterResource
+    configuration:
+      googleCloudAuth: gcpK8sPartnershipProject
+
+  - name: helmInstallResource
+    type: k8s/helmInstallResource
+    configuration:
+      chartVersion: ''
+      namespace: pipelines
+
+pipelines:
+  - name: dynatrace_demo_helm
+    configuration:
+      environmentVariables:
+        readOnly:
+          helmInstallationName: "simplehelm${run_number}"
+    steps:
+      - name: build_image
+        type: DockerBuild
+        configuration:
+          affinityGroup: buildAndPush
+          integrations:
+            - name: partnership_jfrog_io
+          inputResources:
+            - name: helmDemoGitHub
+          dockerFileLocation: pipeline/dynatrace/
+          dockerFileName: Dockerfile
+          #dockerImageName: partnership-art-docker-dynatrace.jfrog.io/simplehelm
+          dockerImageName: dynatracejtpp.jfrog.io/art-docker-dynatrace/simplehelm
+          dockerImageTag: $run_number
+
+      - name: push_image
+        type: DockerPush
+        configuration:
+          affinityGroup: buildAndPush
+          autoPublishBuildInfo: true
+          integrations:
+            - name: partnership_jfrog_io
+          targetRepository: art-docker-dynatrace
+          inputSteps:
+            - name: build_image
+          outputResources:
+            - name: simpleBuildInfo
+            - name: simpleDockerImage
+
+      - name: publish_helm_chart
+        type: HelmPublish
+        configuration:
+          inputSteps:
+            - name: push_image
+          inputResources:
+            - name: simplehelmRepo_chart
+          outputResources:
+            - name: simplehelmChart
+            - name: simpleHelmChartBuildInfo
+          chartPath: pipeline/dynatrace/simplehelm/
+
+      - name: Create_GKE_Cluster
+        type: gcp/gkeCreateCluster
+        configuration:
+          affinityGroup: helm_install
+          inputSteps:
+            - name: publish_helm_chart
+          integrations:
+            - name: gcpK8sPartnershipProject # integration, created in Pipelines UI
+          notifyOnSuccess: true
+          notifyOnFailure: true
+          googleCloudProj: "jfrog-partnership-team"
+          gkeClusterZone: "us-central1-c"
+          gkeClusterName: "dynatrace-demo"
+          numNodes: 3
+          machineType: "n1-standard-1"
+          minNodes: 1
+          maxNodes: 12
+          clusterOptions: "--enable-autoscaling"
+          inputResources:
+            - name: JFrogExtensionSources # Extensions repo
+          outputResources:
+            - name: gkeClusterResource # Extension resource
+
+      # Install Dynatrace agent on the cluster. Use the separate namespace
+      - name: Install_OneAgent_Operator
+        type: Bash
+        configuration:
+          affinityGroup: helm_install
+          integrations:
+            - name: gcpK8sPartnershipProject
+          inputSteps:
+            - name: Create_GKE_Cluster
+          inputResources:
+            - name: gkeClusterResource
+        execution:
+          onStart:
+            - echo "Preparing for work..."
+          onExecute:
+            - echo "Installing and configuring OneAgent"
+            - gcloud container clusters get-credentials ${res_gkeClusterResource_gkeClusterName} --zone ${res_gkeClusterResource_gkeClusterZone} --project ${res_gkeClusterResource_googleCloudProj}
+            #- kubectl create namespace dynatrace
+            #- kubectl apply -f https://github.com/Dynatrace/dynatrace-oneagent-operator/releases/latest/download/kubernetes.yaml
+            #- kubectl -n dynatrace logs deployment/dynatrace-oneagent-operator
+            #- kubectl -n dynatrace create secret generic oneagent --from-literal="apiToken=API_TOKEN" --from-literal="paasToken=PAAS_TOKEN"
+            - curl -o cr.yaml https://raw.githubusercontent.com/Dynatrace/dynatrace-oneagent-operator/master/deploy/cr.yaml
+            # configure cr.yaml file when we have all the data needed
+            #- kubectl apply -f cr.yaml
+          onSuccess:
+            - echo "Dynatrace OneAgent has beed successfully installed"
+          onFailure:
+            - echo "Failure"
+
+      - name: Helm_Install
+        type: k8s/helmInstall
+        configuration:
+          affinityGroup: helm_install
+          integrations:
+            - name: gcpK8sPartnershipProject
+            - name: partnership_jfrog_io
+          repoName: helmDemo
+          #repoUrl: https://partnership.jfrog.io/artifactory/simplecharts
+          repoUrl: https://dynatracejtpp.jfrog.io/artifactory/simplecharts
+          helmInstallationName: simplehelm1 # the step doesn't translate variables, manual bump required every run if cluster is the same
+          helmChart: helmDemo/simplehelm
+          namespace: pipelines
+          repoAuthentication: true
+          chartVersion: ''
+          inputSteps:
+            - name: Install_OneAgent_Operator
+          inputResources:
+            - name: JFrogExtensionSources
+            - name: gkeClusterResource
+          outputResources:
+            - name: helmInstallResource
+
+      - name: modify_properties
+        type: Bash
+        configuration:
+          affinityGroup: helm_install
+          integrations:
+            - name: gcpK8sPartnershipProject
+            - name: partnership_jfrog_io
+          inputSteps:
+            - name: Helm_Install
+          inputResources:
+            - name: simpleHelmChartBuildInfo
+            - name: gkeClusterResource
+            - name: helmInstallResource
+        execution:
+          onStart:
+            - echo "Preparing for work..."
+          onExecute:
+            - echo "Modifying helm chart properties"
+            - echo "Set current time as a deployment time"
+            - TIME=$(date +%s)
+            - curl --location --request PUT "${int_partnership_jfrog_io_url}/api/storage/simplecharts/simplehelm-0.1.0.tgz?properties=deployedOnCluster=${res_gkeClusterResource_gkeClusterName}%7ChelmInstallationName=${res_helmInstallResource_helmInstallationName}%7CdeploymentTimestamp=${TIME}" --header "Accept:application/json" --header "X-Jfrog-Art-Api:${int_partnership_jfrog_io_apikey}"
+          onSuccess:
+            - echo ""
+          onFailure:
+            - echo "Failure"

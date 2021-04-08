@@ -1,0 +1,133 @@
+resources:
+  - name: JFrogExtensionSources
+    type: GitRepo
+    configuration:
+      path: jfrog/partnership-team-pipelines    # <-- branch resources is used
+      gitProvider: danielMiakotkinGitHub                   # <-- account should have and admin access to the repo
+      branches:
+        include: resources
+      buildOn:
+        commit: false # added for testing
+  # Connection to Extension resource
+  - name: gkeClusterResource
+    type: gcp/gkeClusterResource
+    configuration:
+      googleCloudAuth: gcpK8sPartnershipProject
+
+  - name: helmInstallResource
+    type: k8s/helmInstallResource
+    configuration:
+      chartVersion: ''
+      namespace: pipelines
+
+  - name: clusterSVCInfoResource
+    type: k8s/clusterSVCInfoResource
+    configuration:
+      version: ''
+
+pipelines:
+  - name: dynatrace_demo
+    configuration:
+      environmentVariables:
+        readOnly:
+          my_env_var: "hello"
+    steps:
+      - name: Create_GKE_Cluster
+        type: gcp/gkeCreateCluster
+        configuration:
+          affinityGroup: helm_install
+          integrations:
+            - name: gcpK8sPartnershipProject
+            - name: partnersSlack
+          notifyOnSuccess: true
+          notifyOnFailure: true
+          googleCloudProj: "jfrog-partnership-team"
+          gkeClusterZone: "us-central1-c"
+          gkeClusterName: "created-by-pipelines-extension2"
+          numNodes: 6
+          machineType: "n1-standard-1"
+          minNodes: 1
+          maxNodes: 12
+          clusterOptions: "--enable-autoscaling"
+          inputResources:
+            - name: JFrogExtensionSources
+          outputResources:
+            - name: gkeClusterResource
+
+      - name: Helm_Install
+        type: k8s/helmInstall
+        configuration:
+          affinityGroup: helm_install
+          integrations:
+            - name: gcpK8sPartnershipProject
+            - name: helmInstallParameters
+          repoName: artifactory
+          repoUrl: https://charts.jfrog.io
+          helmInstallationName: artifactory
+          helmChart: artifactory/artifactory
+          namespace: pipelines
+          chartVersion: ''
+#          setFlags: >
+#            --set postgresql.postgresqlPassword=<SET_PASSWORD>
+          inputSteps:
+            - name: Create_GKE_Cluster
+          inputResources:
+            - name: JFrogExtensionSources
+            - name: gkeClusterResource
+          outputResources:
+            - name: helmInstallResource
+
+      - name: Wait_For_Pods
+        type: k8s/waitForPods
+        configuration:
+          affinityGroup: helm_install
+          integrations:
+            - name: gcpK8sPartnershipProject
+            - name: partnersSlack
+          notifyOnSuccess: true
+          notifyOnFailure: true
+          inputSteps:
+            - name: Helm_Install
+          inputResources:
+            - name: gkeClusterResource
+            - name: helmInstallResource
+
+      - name: Get_External_LB_IP
+        type: k8s/getLoadBalancerIP
+        configuration:
+          affinityGroup: helm_install
+          integrations:
+            - name: gcpK8sPartnershipProject
+          inputSteps:
+            - name: Wait_For_Pods
+          inputResources:
+            - name: gkeClusterResource
+            - name: helmInstallResource
+          outputResources:
+            - name: clusterSVCInfoResource
+
+      - name: Add_licenses
+        type: Bash
+        configuration:
+          affinityGroup: helm_install
+          integrations:
+            - name: gcpK8sPartnershipProject
+            - name: danielMiakotkinGitHub
+            - name: ArtifactoryLicenses
+          inputSteps:
+            - name: Get_External_LB_IP
+          inputResources:
+            - name: clusterSVCInfoResource
+        execution:
+          onStart:
+            - echo "Preparing for work..."
+          onExecute:
+            - echo "Add a single license to the Artifactory instance"
+            - git clone https://${int_danielMiakotkinGitHub_token}@github.com/jfrog/partner-integration-tests.git
+            - cd partner-integration-tests
+            - chmod +x scripts/apply_single_license.sh
+            - ./scripts/apply_single_license.sh ${int_ArtifactoryLicenses_username} ${int_ArtifactoryLicenses_password} ${res_clusterSVCInfoResource_loadBalancerIP} ${int_ArtifactoryLicenses_license1}
+          onSuccess:
+            - echo "License was added successfully"
+          onFailure:
+            - echo "Failure"
