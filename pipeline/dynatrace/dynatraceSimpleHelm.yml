@@ -2,7 +2,8 @@ resources:
   - name: DemoGitHub
     type: GitRepo
     configuration:
-      gitProvider: danielMiakotkinGitHub
+      gitProvider: danielMiakotkinGitHub # <-- please replace with your GitHub integration
+      # <-- please replace with your fork
       path: danielmkn/pipelines-example # if path is modified, change the name as well, per Pipelines doc
       branches:
         include: pipelines
@@ -14,7 +15,6 @@ resources:
     configuration:
       registry: simplehelmDockerIntegration
       sourceRepository: art-docker-dynatrace
-      #imageName: partnership-art-docker-dynatrace.jfrog.io/simplehelm
       imageName: dynatracejtpp.jfrog.io/art-docker-dynatrace/simplehelm
       imageTag: '${run_number}'
 
@@ -35,8 +35,8 @@ resources:
   - name: simplehelmRepo_chart
     type: GitRepo
     configuration:
-      gitProvider: danielMiakotkinGitHub
-      path: danielmkn/jfrog-pipeline-extensions
+      gitProvider: danielMiakotkinGitHub # replace with your integration name
+      path: danielmkn/pipelines-example # replace with your repository name
       branches:
         include: pipelines
 
@@ -53,7 +53,7 @@ resources:
   - name: JFrogExtensionSources
     type: GitRepo
     configuration:
-      path: jfrog/partnership-team-pipelines
+      path: danielmkn/pipelines-extensions-example # <-- please replace with your fork
       gitProvider: danielMiakotkinGitHub     # <-- account should have and admin access to the repo
       branches:
         include: resources
@@ -63,7 +63,7 @@ resources:
   - name: gkeClusterResource
     type: gcp/gkeClusterResource
     configuration:
-      googleCloudAuth: gcpK8sPartnershipProject
+      googleCloudAuth: gcpK8sPartnershipProject # please replace with your GCP integration
 
   - name: helmInstallResource
     type: k8s/helmInstallResource
@@ -88,7 +88,6 @@ pipelines:
             - name: DemoGitHub
           dockerFileLocation: pipeline/dynatrace/
           dockerFileName: Dockerfile
-          #dockerImageName: partnership-art-docker-dynatrace.jfrog.io/simplehelm
           dockerImageName: dynatracejtpp.jfrog.io/art-docker-dynatrace/simplehelm
           dockerImageTag: $run_number
 
@@ -125,7 +124,7 @@ pipelines:
           inputSteps:
             - name: publish_helm_chart
           integrations:
-            - name: gcpK8sPartnershipProject # integration, created in Pipelines UI
+            - name: gcpK8sPartnershipProject # please replace with your GCP integration
           notifyOnSuccess: true
           notifyOnFailure: true
           googleCloudProj: "jfrog-partnership-team"
@@ -147,7 +146,7 @@ pipelines:
         configuration:
           affinityGroup: helm_install
           integrations:
-            - name: gcpK8sPartnershipProject
+            - name: gcpK8sPartnershipProject # please replace with your GCP integration
           inputSteps:
             - name: Create_GKE_Cluster
           inputResources:
@@ -175,7 +174,7 @@ pipelines:
         configuration:
           affinityGroup: helm_install
           integrations:
-            - name: gcpK8sPartnershipProject
+            - name: gcpK8sPartnershipProject # please replace with your GCP integration
             - name: partnership_jfrog_io
           repoName: helmDemo
           #repoUrl: https://partnership.jfrog.io/artifactory/simplecharts
@@ -198,7 +197,7 @@ pipelines:
         configuration:
           affinityGroup: helm_install
           integrations:
-            - name: gcpK8sPartnershipProject
+            - name: gcpK8sPartnershipProject # please replace with your GCP integration
             - name: partnership_jfrog_io
           inputSteps:
             - name: Helm_Install
